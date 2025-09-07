@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Tag Reader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-sm flex flex-col items-center space-y-6">
+        <h1 class="text-3xl font-bold text-center text-teal-300">NFC Tag Reader</h1>
+        <p class="text-gray-400 text-center">Tap an NFC tag to your device to read its contents.</p>
+
+        <!-- Button to start scanning -->
+        <button id="scanButton" class="w-full px-6 py-3 bg-teal-500 text-white rounded-full font-bold text-lg shadow-lg hover:bg-teal-400 transition duration-300 ease-in-out transform hover:scale-105">
+            Start Scanning
+        </button>
+
+        <!-- Status Message Area -->
+        <div id="status" class="w-full text-center p-2 rounded-md font-semibold text-gray-300">
+            Waiting to scan...
+        </div>
+
+        <!-- Display Area for Tag Data -->
+        <div class="w-full bg-gray-700 p-4 rounded-lg space-y-4">
+            <h2 class="text-xl font-semibold text-gray-200">Tag Data</h2>
+            <div id="tagData" class="text-sm break-words whitespace-pre-wrap text-gray-300">
+                No data read yet.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const scanButton = document.getElementById('scanButton');
+        const statusDiv = document.getElementById('status');
+        const tagDataDiv = document.getElementById('tagData');
+
+        // Check if the Web NFC API is supported
+        if ('NDEFReader' in window) {
+            statusDiv.textContent = 'Ready to start scanning.';
+            scanButton.disabled = false;
+        } else {
+            statusDiv.textContent = 'Web NFC is not supported on this device/browser.';
+            statusDiv.classList.add('text-red-400');
+            scanButton.disabled = true;
+        }
+
+        scanButton.addEventListener('click', async () => {
+            statusDiv.textContent = 'Scanning... Tap an NFC tag now.';
+            statusDiv.classList.remove('text-gray-300', 'text-green-400', 'text-red-400');
+            statusDiv.classList.add('text-yellow-400');
+            tagDataDiv.textContent = 'Scanning for tag...';
+
+            try {
+                // Initialize a new NDEFReader
+                const reader = new NDEFReader();
+
+                // Listen for the 'reading' event
+                reader.addEventListener("reading", ({ message, serialNumber }) => {
+                    statusDiv.textContent = 'Tag successfully read!';
+                    statusDiv.classList.remove('text-yellow-400', 'text-red-400');
+                    statusDiv.classList.add('text-green-400');
+
+                    // Process the message and display the data
+                    let output = `Serial Number: ${serialNumber || 'N/A'}\n\n`;
+                    let recordCount = 0;
+                    for (const record of message.records) {
+                        recordCount++;
+                        output += `--- Record #${recordCount} ---\n`;
+                        output += `Record Type: ${record.recordType}\n`;
+                        output += `Media Type: ${record.mediaType || 'N/A'}\n`;
+                        output += `Encoding: ${record.encoding || 'N/A'}\n`;
+                        output += `Data Size: ${record.data.byteLength} bytes\n`;
+
+                        // Decode the payload based on the record type
+                        if (record.recordType === 'text') {
+                            const textDecoder = new TextDecoder(record.encoding);
+                            output += `Data: "${textDecoder.decode(record.data)}"\n`;
+                        } else if (record.recordType === 'url') {
+                            const textDecoder = new TextDecoder();
+                            output += `Data: "${textDecoder.decode(record.data)}"\n`;
+                        } else {
+                            output += `Data: (binary data, not decoded)\n`;
+                        }
+                    }
+                    tagDataDiv.textContent = output;
+                });
+
+                // Listen for the 'readingerror' event
+                reader.addEventListener("readingerror", () => {
+                    statusDiv.textContent = 'Error reading tag. Please try again.';
+                    statusDiv.classList.remove('text-yellow-400', 'text-green-400');
+                    statusDiv.classList.add('text-red-400');
+                    tagDataDiv.textContent = 'An error occurred while scanning.';
+                });
+
+                // Start the scanning process
+                await reader.scan();
+
+            } catch (error) {
+                console.error("Error with NFC:", error);
+                statusDiv.textContent = `Scanning failed: ${error.name}`;
+                statusDiv.classList.remove('text-yellow-400', 'text-green-400');
+                statusDiv.classList.add('text-red-400');
+                tagDataDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
