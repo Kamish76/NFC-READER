@@ -3,120 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFC Tag Reader</title>
+    <title>Spotify NFC Link Writer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #1a202c;
-            color: #e2e8f0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+        }
+        /* Simple scrollbar styling */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: #2d3748; /* gray-800 */
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: #4a5568; /* gray-600 */
+            border-radius: 4px;
+        }
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: #718096; /* gray-500 */
         }
     </style>
 </head>
-<body class="p-4">
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen p-4">
 
-    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-sm flex flex-col items-center space-y-6">
-        <h1 class="text-3xl font-bold text-center text-teal-300">NFC Tag Reader</h1>
-        <p class="text-gray-400 text-center">Tap an NFC tag to your device to read its contents.</p>
-
-        <!-- Button to start scanning -->
-        <button id="scanButton" class="w-full px-6 py-3 bg-teal-500 text-white rounded-full font-bold text-lg shadow-lg hover:bg-teal-400 transition duration-300 ease-in-out transform hover:scale-105">
-            Start Scanning
-        </button>
-
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md flex flex-col items-center space-y-6">
+        <h1 class="text-3xl font-bold text-center text-green-400">Spotify NFC Link Writer</h1>
+        
         <!-- Status Message Area -->
-        <div id="status" class="w-full text-center p-2 rounded-md font-semibold text-gray-300">
-            Waiting to scan...
+        <div id="status" class="w-full text-center p-3 rounded-lg font-semibold text-gray-300 bg-gray-700 transition-all duration-300">
+            Waiting for action...
         </div>
 
-        <!-- Display Area for Tag Data -->
-        <div class="w-full bg-gray-700 p-4 rounded-lg space-y-4">
-            <h2 class="text-xl font-semibold text-gray-200">Tag Data</h2>
-            <div id="tagData" class="text-sm break-words whitespace-pre-wrap text-gray-300">
-                No data read yet.
+        <!-- Writer Section -->
+        <div class="w-full space-y-4">
+            <h2 class="text-2xl font-semibold text-green-300 border-b-2 border-gray-700 pb-2">Playlist Links</h2>
+            <p class="text-sm text-gray-400">Paste your list of Spotify song links below, one link per line.</p>
+            <textarea id="linksData" class="w-full h-40 p-3 bg-gray-900 rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400" placeholder="https://open.spotify.com/track/link1...&#10;https://open.spotify.com/track/link2...&#10;https://open.spotify.com/track/link3..."></textarea>
+            
+            <div id="progress" class="w-full text-center text-gray-400 font-medium">No links loaded.</div>
+
+            <button id="writeButton" class="w-full px-6 py-3 bg-green-600 text-white rounded-full font-bold text-lg shadow-lg hover:bg-green-500 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-opacity-75 disabled:bg-gray-600 disabled:cursor-not-allowed">
+                Write Next Link to Tag
+            </button>
+        </div>
+        
+        <!-- Divider -->
+        <div class="w-full border-t border-gray-700 my-2"></div>
+
+        <!-- Reader Section (for testing) -->
+        <div class="w-full space-y-4">
+            <h2 class="text-xl font-semibold text-gray-400">Test Read Tag</h2>
+            <button id="scanButton" class="w-full px-4 py-2 bg-gray-600 text-white rounded-full font-bold shadow-md hover:bg-gray-500 transition duration-300 ease-in-out">
+                Read a Tag
+            </button>
+            <div id="tagData" class="text-xs break-words whitespace-pre-wrap text-gray-500 h-16 overflow-y-auto mt-2 p-2 bg-gray-900 rounded">
+                Tag data will appear here.
             </div>
         </div>
     </div>
 
     <script>
+        const writeButton = document.getElementById('writeButton');
         const scanButton = document.getElementById('scanButton');
         const statusDiv = document.getElementById('status');
+        const linksDataTextarea = document.getElementById('linksData');
+        const progressDiv = document.getElementById('progress');
         const tagDataDiv = document.getElementById('tagData');
 
-        // Check if the Web NFC API is supported
-        if ('NDEFReader' in window) {
-            statusDiv.textContent = 'Ready to start scanning.';
-            scanButton.disabled = false;
-        } else {
-            statusDiv.textContent = 'Web NFC is not supported on this device/browser.';
-            statusDiv.classList.add('text-red-400');
-            scanButton.disabled = true;
+        let spotifyLinks = [];
+        let currentLinkIndex = 0;
+
+        // --- Utility function to update status ---
+        function updateStatus(message, type = 'info', extraMessage = '') {
+            statusDiv.innerHTML = message;
+             if (extraMessage) {
+                statusDiv.innerHTML += `<br><span class="text-sm font-normal">${extraMessage}</span>`;
+            }
+            // Simplified class management for brevity
+            statusDiv.className = 'w-full text-center p-3 rounded-lg font-semibold transition-all duration-300 ';
+            switch (type) {
+                case 'success': statusDiv.classList.add('text-green-300', 'bg-green-900/50'); break;
+                case 'error': statusDiv.classList.add('text-red-400', 'bg-red-900/50'); break;
+                case 'scanning': statusDiv.classList.add('text-yellow-400', 'bg-yellow-900/50'); break;
+                default: statusDiv.classList.add('text-gray-300', 'bg-gray-700');
+            }
         }
 
-        scanButton.addEventListener('click', async () => {
-            statusDiv.textContent = 'Scanning... Tap an NFC tag now.';
-            statusDiv.classList.remove('text-gray-300', 'text-green-400', 'text-red-400');
-            statusDiv.classList.add('text-yellow-400');
-            tagDataDiv.textContent = 'Scanning for tag...';
+        function updateProgress() {
+            if (spotifyLinks.length === 0) {
+                progressDiv.textContent = 'No links loaded.';
+                writeButton.disabled = !('NDEFReader' in window); // only enable if NFC is supported
+                return;
+            }
+            
+            writeButton.disabled = false;
+            
+            if (currentLinkIndex >= spotifyLinks.length) {
+                progressDiv.textContent = `All done! (${spotifyLinks.length}/${spotifyLinks.length})`;
+                updateStatus('All links have been written!', 'success');
+                writeButton.disabled = true;
+            } else {
+                const nextLink = spotifyLinks[currentLinkIndex].length > 50 ? spotifyLinks[currentLinkIndex].substring(0, 47) + '...' : spotifyLinks[currentLinkIndex];
+                progressDiv.innerHTML = `Progress: <span class="font-bold text-white">${currentLinkIndex}/${spotifyLinks.length}</span><br>Next: <span class="text-green-400">${nextLink}</span>`;
+            }
+        }
+
+        function parseLinks() {
+            const linksText = linksDataTextarea.value;
+            spotifyLinks = linksText.split('\n').map(link => link.trim()).filter(link => link.startsWith('http'));
+            currentLinkIndex = 0;
+            if (linksText.length > 0) {
+                 updateStatus(`${spotifyLinks.length} links loaded. Ready to write.`);
+            }
+            updateProgress();
+        }
+
+        // --- Event Listeners ---
+        linksDataTextarea.addEventListener('input', parseLinks);
+        
+        writeButton.addEventListener('click', async () => {
+            if (currentLinkIndex >= spotifyLinks.length) {
+                updateStatus('All links have been written.', 'success');
+                return;
+            }
+
+            const linkToWrite = spotifyLinks[currentLinkIndex];
+            updateStatus(`Ready to write link #${currentLinkIndex + 1}. Tap tag now...`, 'scanning');
 
             try {
-                // Initialize a new NDEFReader
-                const reader = new NDEFReader();
-
-                // Listen for the 'reading' event
-                reader.addEventListener("reading", ({ message, serialNumber }) => {
-                    statusDiv.textContent = 'Tag successfully read!';
-                    statusDiv.classList.remove('text-yellow-400', 'text-red-400');
-                    statusDiv.classList.add('text-green-400');
-
-                    // Process the message and display the data
-                    let output = `Serial Number: ${serialNumber || 'N/A'}\n\n`;
-                    let recordCount = 0;
-                    for (const record of message.records) {
-                        recordCount++;
-                        output += `--- Record #${recordCount} ---\n`;
-                        output += `Record Type: ${record.recordType}\n`;
-                        output += `Media Type: ${record.mediaType || 'N/A'}\n`;
-                        output += `Encoding: ${record.encoding || 'N/A'}\n`;
-                        output += `Data Size: ${record.data.byteLength} bytes\n`;
-
-                        // Decode the payload based on the record type
-                        if (record.recordType === 'text') {
-                            const textDecoder = new TextDecoder(record.encoding);
-                            output += `Data: "${textDecoder.decode(record.data)}"\n`;
-                        } else if (record.recordType === 'url') {
-                            const textDecoder = new TextDecoder();
-                            output += `Data: "${textDecoder.decode(record.data)}"\n`;
-                        } else {
-                            output += `Data: (binary data, not decoded)\n`;
-                        }
-                    }
-                    tagDataDiv.textContent = output;
+                const writer = new NDEFReader();
+                // We use "url" recordType for links
+                await writer.write({
+                    records: [{ recordType: "url", data: linkToWrite }]
                 });
-
-                // Listen for the 'readingerror' event
-                reader.addEventListener("readingerror", () => {
-                    statusDiv.textContent = 'Error reading tag. Please try again.';
-                    statusDiv.classList.remove('text-yellow-400', 'text-green-400');
-                    statusDiv.classList.add('text-red-400');
-                    tagDataDiv.textContent = 'An error occurred while scanning.';
-                });
-
-                // Start the scanning process
-                await reader.scan();
-
+                updateStatus(`Successfully wrote: ${linkToWrite}`, 'success');
+                currentLinkIndex++;
+                updateProgress();
             } catch (error) {
-                console.error("Error with NFC:", error);
-                statusDiv.textContent = `Scanning failed: ${error.name}`;
-                statusDiv.classList.remove('text-yellow-400', 'text-green-400');
-                statusDiv.classList.add('text-red-400');
-                tagDataDiv.textContent = `Error: ${error.message}`;
+                console.error("Error writing to NFC tag:", error);
+                updateStatus(`Write failed: ${error.message}`, 'error');
             }
         });
+
+        scanButton.addEventListener('click', async () => {
+             updateStatus('Scanning to test... Tap a tag.', 'scanning');
+             tagDataDiv.textContent = '';
+             try {
+                const reader = new NDEFReader();
+                await reader.scan();
+                reader.addEventListener("reading", ({ message }) => {
+                    const record = message.records[0];
+                    const textDecoder = new TextDecoder();
+                    const data = textDecoder.decode(record.data);
+                    updateStatus('Read successful!', 'success');
+                    tagDataDiv.textContent = `Record Type: ${record.recordType}\nData: ${data}`;
+                });
+             } catch (error) {
+                updateStatus(`Read failed: ${error.name}`, 'error');
+             }
+        });
+
+
+        // --- Initial Check ---
+        if ('NDEFReader' in window) {
+            updateStatus('Web NFC supported. Paste links to start.');
+        } else {
+            updateStatus('Web NFC is not supported on this browser.', 'error', 'You can still prepare your link list. Writing requires an NFC-capable device.');
+            // Only disable the buttons that require the NFC API
+            [writeButton, scanButton].forEach(el => el.disabled = true);
+        }
+        
+        // Initial setup
+        parseLinks();
     </script>
 </body>
 </html>
+
