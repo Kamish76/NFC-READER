@@ -75,7 +75,7 @@
         const tagDataDiv = document.getElementById('tagData');
 
         let spotifyLinks = [];
-        let currentLinkIndex = 0;
+        let totalLinksOnLoad = 0;
 
         // --- Utility function to update status ---
         function updateStatus(message, type = 'info', extraMessage = '') {
@@ -94,28 +94,29 @@
         }
 
         function updateProgress() {
+            const writtenCount = totalLinksOnLoad - spotifyLinks.length;
+
             if (spotifyLinks.length === 0) {
-                progressDiv.textContent = 'No links loaded.';
-                writeButton.disabled = !('NDEFReader' in window); // only enable if NFC is supported
+                 if (totalLinksOnLoad > 0) {
+                    progressDiv.textContent = `All done! (${totalLinksOnLoad}/${totalLinksOnLoad})`;
+                    updateStatus('All links have been written!', 'success');
+                } else {
+                    progressDiv.textContent = 'No links loaded.';
+                }
+                writeButton.disabled = true;
                 return;
             }
             
             writeButton.disabled = false;
             
-            if (currentLinkIndex >= spotifyLinks.length) {
-                progressDiv.textContent = `All done! (${spotifyLinks.length}/${spotifyLinks.length})`;
-                updateStatus('All links have been written!', 'success');
-                writeButton.disabled = true;
-            } else {
-                const nextLink = spotifyLinks[currentLinkIndex].length > 50 ? spotifyLinks[currentLinkIndex].substring(0, 47) + '...' : spotifyLinks[currentLinkIndex];
-                progressDiv.innerHTML = `Progress: <span class="font-bold text-white">${currentLinkIndex}/${spotifyLinks.length}</span><br>Next: <span class="text-green-400">${nextLink}</span>`;
-            }
+            const nextLink = spotifyLinks[0].length > 50 ? spotifyLinks[0].substring(0, 47) + '...' : spotifyLinks[0];
+            progressDiv.innerHTML = `Progress: <span class="font-bold text-white">${writtenCount}/${totalLinksOnLoad}</span><br>Next: <span class="text-green-400">${nextLink}</span>`;
         }
 
         function parseLinks() {
             const linksText = linksDataTextarea.value;
             spotifyLinks = linksText.split('\n').map(link => link.trim()).filter(link => link.startsWith('http'));
-            currentLinkIndex = 0;
+            totalLinksOnLoad = spotifyLinks.length;
             if (linksText.length > 0) {
                  updateStatus(`${spotifyLinks.length} links loaded. Ready to write.`);
             }
@@ -126,23 +127,26 @@
         linksDataTextarea.addEventListener('input', parseLinks);
         
         writeButton.addEventListener('click', async () => {
-            if (currentLinkIndex >= spotifyLinks.length) {
-                updateStatus('All links have been written.', 'success');
+            if (spotifyLinks.length === 0) {
+                updateStatus('No links left to write.', 'error');
                 return;
             }
 
-            const linkToWrite = spotifyLinks[currentLinkIndex];
-            updateStatus(`Ready to write link #${currentLinkIndex + 1}. Tap tag now...`, 'scanning');
+            const linkToWrite = spotifyLinks[0];
+            updateStatus(`Ready to write... Tap tag now`, 'scanning', `Writing: ${linkToWrite}`);
 
             try {
                 const writer = new NDEFReader();
-                // We use "url" recordType for links
                 await writer.write({
                     records: [{ recordType: "url", data: linkToWrite }]
                 });
-                updateStatus(`Successfully wrote: ${linkToWrite}`, 'success');
-                currentLinkIndex++;
-                updateProgress();
+                
+                // --- SUCCESS: Remove link and update UI ---
+                updateStatus(`Successfully wrote link!`, 'success');
+                spotifyLinks.shift(); // Remove the first element from the array
+                linksDataTextarea.value = spotifyLinks.join('\n'); // Update the textarea
+                updateProgress(); // Recalculate and display progress
+
             } catch (error) {
                 console.error("Error writing to NFC tag:", error);
                 updateStatus(`Write failed: ${error.message}`, 'error');
